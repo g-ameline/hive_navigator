@@ -1,0 +1,7 @@
+.aws/
+.profile
+all_files.md
+audio/
+sensors/
+shell.nix
+tree.md
