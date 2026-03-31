@@ -1,9 +1,8 @@
 import numpy
 from pipe import Pipe
-
+from functools import partial
 from scipy.signal import find_peaks
 
-@Pipe
 def triples_from_hive_acceleromtry_filepath(filepath):
     expected_header = 'timestamp,f1,m1,f2,m2,f3,m3'
     with open(filepath, mode='r') as stream:
@@ -26,7 +25,6 @@ def triples_from_hive_acceleromtry_filepath(filepath):
     magnitudes = raw[:, [1, 3, 5]]
     return timestamps, frequencies, magnitudes
 
-@Pipe
 def flatten_triple_frequencies_and_triple_magnitudes(
     timestamps_and_triple_frequencies_and_triple_magnitudes,    
 ):
@@ -37,7 +35,6 @@ def flatten_triple_frequencies_and_triple_magnitudes(
         triple_magnitudes.flatten()
     )
 
-@Pipe
 def only_first_peak_from_accelerometry(
     timestamps_and_triple_frequencies_and_triple_magnitudes,    
 ):
@@ -48,7 +45,6 @@ def only_first_peak_from_accelerometry(
         triple_magnitudes[:, 0]
     )
 
-# @Pipe
 # def harmonic_frequency_bin_triple_from_accelerometry(
 #     timestamps_and_frequencies_and_magnitudes,    
 #     bin_number= 2200,
@@ -67,7 +63,6 @@ def only_first_peak_from_accelerometry(
 #     )
 #     harmonic_bins = [(bin_edges[peak_index],bin_edges[peak_index+1]) for peak_index in peak_indices]
 
-@Pipe
 def harmonic_frequency_bin_triple_from_accelerometry(
     timestamps_and_frequencies_and_magnitudes,    
     neighbor_width=5,
@@ -99,7 +94,6 @@ def peaks(frequencies):
     harmonic_bins = [(bin_edges[i], bin_edges[i + 1]) for i in peak_indices]
     return harmonic_bins
 
-@Pipe
 def harmonicless_accelerometry_from_accelerometry_and_harmonic_frequency_bins(
     timestamps_and_frequencies_and_magnitudes,    
     harmonic_frequency_bins
@@ -115,22 +109,21 @@ def harmonicless_accelerometry_from_accelerometry_and_harmonic_frequency_bins(
         magnitudes[mask],
     )
 
-@Pipe
 def harmonicless_accelerometry_from_accelerometry_from_accelerometry(
     timestamps_and_frequencies_and_magnitudes,    
 ):
     harmonic_frequency_bins = (
         timestamps_and_frequencies_and_magnitudes    
-        | harmonic_frequency_bin_triple_from_accelerometry
+        | Pipe(harmonic_frequency_bin_triple_from_accelerometry)
     )
     return (
-        harmonicless_accelerometry_from_accelerometry_and_harmonic_frequency_bins(
+        partial(
+            harmonicless_accelerometry_from_accelerometry_and_harmonic_frequency_bins,
             harmonic_frequency_bins = harmonic_frequency_bins
         )
     )
 
 
-@Pipe
 def concatenated_accelerometry_from_accelerometries(accelerometries):
     triples = list(accelerometries)
     return (
@@ -140,7 +133,6 @@ def concatenated_accelerometry_from_accelerometries(accelerometries):
     )
 
 
-@Pipe
 def high_magnitude_only_accelerometry(
     timestamps_and_frequencies_and_magnitudes,    
     threshold = 6,
@@ -211,7 +203,6 @@ def _daily_band_statistic_from_accelerometry(
 
     return unique_days, numpy.array([day_stat(day) for day in unique_days])
 
-@Pipe
 def daily_mean_band_magnitude_from_accelerometry(
     timestamps_and_frequencies_and_magnitudes,    
     low_hz, high_hz
@@ -221,7 +212,6 @@ def daily_mean_band_magnitude_from_accelerometry(
         low_hz, high_hz, numpy.mean,
     )
 
-@Pipe
 def daily_total_band_magnitude_from_accelerometry(
     timestamps_and_frequencies_and_magnitudes,    
     low_hz, high_hz
@@ -231,7 +221,6 @@ def daily_total_band_magnitude_from_accelerometry(
         low_hz, high_hz, numpy.sum,
     )
 
-@Pipe
 def daily_band_peak_count_from_accelerometry(
     timestamps_and_frequencies_and_magnitudes,    
     low_hz, high_hz
@@ -241,7 +230,6 @@ def daily_band_peak_count_from_accelerometry(
         low_hz, high_hz, len,
     )
 
-@Pipe
 def daily_in_band_peak_ratio_from_accelerometry(
     timestamps_and_frequencies_and_magnitudes,    
     low_hz, high_hz
@@ -258,7 +246,6 @@ def daily_in_band_peak_ratio_from_accelerometry(
 
     return unique_days, numpy.array([day_ratio(day) for day in unique_days])
 
-@Pipe
 def daily_band_to_spectrum_magnitude_ratio_from_accelerometry(
     timestamps_and_frequencies_and_magnitudes,    
     low_hz, high_hz
@@ -288,7 +275,6 @@ def binary_activity_from_daily_values(day_timestamps, values, threshold):
     return day_timestamps, (values >= threshold).astype(numpy.uint8)
 
 
-@Pipe
 def time_filtered_accelerometry(
     timestamps_and_frequencies_and_magnitudes,
     start_hour=8,

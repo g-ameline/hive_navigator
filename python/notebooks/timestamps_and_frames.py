@@ -6,7 +6,6 @@ from datetime import datetime
 
 import paths
 
-@Pipe
 def hourly_audio_slices_from_filepath(filepath, sample_rate=16000):
     """Splits one FLAC file at hour boundaries.
     Yields (hour_timestamp, audio_array) — one or two per file."""
@@ -66,7 +65,6 @@ def filtered_flac_filepaths_from_folderpath(folderpath, date_range, hour_range):
     return flac_files
 
 
-@Pipe
 def hourly_audio_from_hive_folderpath(
     folderpath,
     date_range=None,

@@ -94,46 +94,46 @@ def zscored_dataframe_from_dataframe(dataframe, baseline_end="2026-03-09"):
 
 def queenstate_from_row(row):
     hive_number = int(row["hive"].split("_")[1])
-    events = times.QUEEN_EVENTS.get(hive_number, [])
-    state = "queenright"
-    for date_string, event in events:
-        event_timestamp = pandas.Timestamp(date_string)
-        match event:
-            case "removed":
-                if row["timestamp"] >= event_timestamp:
-                    state = "queenless"
-            case "introduced":
-                if row["timestamp"] > event_timestamp:
-                    state = "queenright"
-    return state
+    period = times.queenless_period_per_hive.get(hive_number, [])
+    if not period:
+        return 'queenright'
+    start, end = period
+    start_date = numpy.datetime64('0001-01-01') if start == None else pandas.Timestamp(start)
+    end_date = numpy.datetime64('9999-12-31') if end == None else pandas.Timestamp(end)
 
-
+    if start_date <= row["timestamp"] <= end_date:
+        return 'queenless'
+    else:
+        return 'queenright'
 
 def numeric_columns_from_dataframe(dataframe, excluded_columns = {"timestamp", "hive", "time_slice", "queenlessness"} ):
     return [
         column for column in dataframe.select_dtypes(include="number").columns
         if column not in excluded_columns and not column.startswith("Unnamed")
     ]
-
 def zscored_dataframe_from_dataframe_and_baseline(dataframe, baseline_dataframe):
     numeric_columns = numeric_columns_from_dataframe(baseline_dataframe)
 
     stats_per_slice = {
         time_slice: {
-            "mean": group[numeric_columns].mean(),
-            "std": group[numeric_columns].std(),
+            "mean": group[numeric_columns].mean().values,
+            "std": group[numeric_columns].std().values,
         }
         for time_slice, group in baseline_dataframe.groupby("time_slice")
     }
 
-    zscores = pandas.DataFrame(index=dataframe.index, columns=numeric_columns, dtype=float)
+    result = numpy.full((len(dataframe), len(numeric_columns)), numpy.nan)
+
     for time_slice, group in dataframe.groupby("time_slice"):
         assert time_slice in stats_per_slice, f"no baseline stats for time_slice {time_slice}"
         stats = stats_per_slice[time_slice]
-        zscores.loc[group.index] = ((group[numeric_columns] - stats["mean"]) / stats["std"]).values
-    return zscores
+        row_indices = dataframe.index.get_indexer(group.index)
+        result[row_indices] = (
+            (group[numeric_columns].values - stats["mean"])
+            / (stats["std"] + 1e-10)
+        )
 
-
+    return pandas.DataFrame(result, index=dataframe.index, columns=numeric_columns)
 from scipy.cluster.hierarchy import linkage, leaves_list
 from scipy.spatial.distance import pdist
 

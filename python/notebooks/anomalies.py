@@ -52,13 +52,11 @@ def anomaly_scores_from_dataframe_and_scorers(dataframe, scorers):
     return anomaly_scores
 
 
-
 import matplotlib.pyplot
 import matplotlib.patches
 import matplotlib.colors
 import numpy
 import pandas
-
 
 FEATURE_GROUP_DIVERGING_COLORS = [
     ((0.12, 0.47, 0.71), (0.84, 0.15, 0.16)),
@@ -66,27 +64,72 @@ FEATURE_GROUP_DIVERGING_COLORS = [
     ((0.58, 0.40, 0.74), (1.00, 0.50, 0.05)),
     ((0.09, 0.75, 0.81), (0.74, 0.74, 0.13)),
     ((0.55, 0.34, 0.29), (0.50, 0.50, 0.50)),
-    ((0.84, 0.15, 0.16), (0.12, 0.47, 0.71)),
-    ((1.00, 0.50, 0.05), (0.17, 0.63, 0.17)),
-    ((0.89, 0.47, 0.76), (0.09, 0.75, 0.81)),
+    ((0.20, 0.30, 0.60), (0.90, 0.35, 0.25)),
+    ((0.40, 0.65, 0.30), (0.70, 0.25, 0.50)),
+    ((0.10, 0.55, 0.55), (0.85, 0.60, 0.20)),
+    ((0.65, 0.20, 0.45), (0.25, 0.60, 0.45)),
+    ((0.45, 0.50, 0.15), (0.35, 0.30, 0.65)),
+    ((0.80, 0.40, 0.40), (0.30, 0.50, 0.70)),
+    ((0.50, 0.70, 0.50), (0.70, 0.40, 0.60)),
 ]
+
+
+_FEATURE_GROUP_PREFIXES = [
+    "audio_band_coefficient",
+    "audio_band_density_ratio",
+    "audio_density_variation",
+    "bark_band",
+    "chroma",
+    "erb_band",
+    "gammatone_frequency_cepstral_coefficients",
+    "high_frequency_content",
+    "hive_power",
+    "linear_frequency_cepstral_coefficients",
+    "low_root_mean_square_energy",
+    "low_spectral",
+    "low_to_high_energy_ratio",
+    "low_to_middle_energy_ratio",
+    "mel_frequency_cepstral_coefficients",
+    "middle_root_mean_square_energy",
+    "middle_spectral",
+    "middle_to_high_energy_ratio",
+    "high_root_mean_square_energy",
+    "high_spectral",
+    "root_mean_square_energy",
+    "spectral_bandwidth",
+    "spectral_centroid",
+    "spectral_contrast",
+    "spectral_crest",
+    "spectral_entropy",
+    "spectral_flatness",
+    "spectral_flux",
+    "spectral_kurtosis",
+    "spectral_rolloff",
+    "spectral_skewness",
+    "spectral_strong_peak",
+    "spectral_valley",
+    "zero_crossing_rate",
+    "low_modulation",
+    "middle_modulation",
+    "high_modulation",
+    "middle_peak_modulation",
+    "low_peak_modulation",
+    "high_peak_modulation",
+    "humidity",
+    "temperature",
+]
+
+
+def feature_group_from_column_name(column_name):
+    for prefix in sorted(_FEATURE_GROUP_PREFIXES, key=len, reverse=True):
+        if column_name.startswith(prefix):
+            return prefix
+    return column_name.rsplit("_", 1)[0]
+
 
 MISSING_GRAY = 0.92
 
 _GROUP_CMAP_CACHE = {}
-
-
-def feature_group_from_column_name(column_name):
-    name = column_name
-    parts = name.rsplit("_", 1)
-    if len(parts) == 2 and parts[1].isdigit():
-        name = parts[0]
-    if name.endswith("_mean"):
-        return name.split("_")[0] + "_mean"
-    elif name.endswith("_std"):
-        return name.split("_")[0] + "_std"
-    else:
-        return name.split("_")[0]
 
 
 def _diverging_cmap_from_colors(color_negative, color_positive):
@@ -142,16 +185,28 @@ def reindexed_zscores_and_scores_from_originals_and_index(
         numpy.asarray(anomaly_scores),
         index=pandas.to_datetime(timestamps).values,
     )
+
+    zscores_by_time = zscores_by_time.groupby(level=0).mean()
+    scores_by_time = scores_by_time.groupby(level=0).mean()
+
     return zscores_by_time.reindex(full_index), scores_by_time.reindex(full_index)
 
 
 def aggregated_panel_from_zscores_and_metadata(
-    zscores, anomaly_scores, timestamps, hives, method, numeric_columns,
+    baseline_zscores, baseline_anomaly_scores, baseline_timestamps, baseline_hives,
+    method, numeric_columns,
+    investigated_zscores=None, investigated_timestamps=None,
 ):
-    grouped = pandas.DataFrame(zscores.values, columns=numeric_columns)
-    grouped["timestamp"] = pandas.to_datetime(timestamps).values
-    grouped["_anomaly_score"] = numpy.asarray(anomaly_scores)
-    grouped["hive"] = numpy.asarray(hives)
+    grouped = pandas.DataFrame(baseline_zscores.values, columns=numeric_columns)
+    grouped["timestamp"] = pandas.to_datetime(baseline_timestamps).values
+    grouped["_anomaly_score"] = numpy.asarray(baseline_anomaly_scores)
+    grouped["hive"] = numpy.asarray(baseline_hives)
+
+    def _investigated_by_timestamp():
+        return pandas.DataFrame(
+            investigated_zscores.values, columns=numeric_columns,
+            index=pandas.to_datetime(investigated_timestamps),
+        ).groupby(level=0).mean()
 
     match method:
         case int():
@@ -172,9 +227,34 @@ def aggregated_panel_from_zscores_and_metadata(
             result_zscores = grouped.groupby("timestamp")[numeric_columns].max()
             result_anomaly_scores = grouped.groupby("timestamp")["_anomaly_score"].max()
 
+        case "closest":
+            assert investigated_zscores is not None, "closest requires investigated_zscores"
+            inv_by_timestamp = _investigated_by_timestamp()
+
+            def closest_row(group):
+                ts = group.name
+                if ts not in inv_by_timestamp.index:
+                    return group.loc[group[numeric_columns].abs().mean(axis=1).idxmin()]
+                inv = inv_by_timestamp.loc[ts, numeric_columns].values
+                distances = ((group[numeric_columns].values - inv) ** 2).sum(axis=1)
+                return group.iloc[numpy.argmin(distances)]
+
+            result = grouped.groupby("timestamp").apply(closest_row, include_groups=False)
+            result_zscores = result[numeric_columns]
+            result_anomaly_scores = result["_anomaly_score"]
+
         case "furthest":
+            assert investigated_zscores is not None, "furthest requires investigated_zscores"
+            inv_by_timestamp = _investigated_by_timestamp()
+
             def furthest_row(group):
-                return group.loc[group[numeric_columns].abs().max(axis=1).idxmax()]
+                ts = group.name
+                if ts not in inv_by_timestamp.index:
+                    return group.loc[group[numeric_columns].abs().mean(axis=1).idxmax()]
+                inv = inv_by_timestamp.loc[ts, numeric_columns].values
+                distances = ((group[numeric_columns].values - inv) ** 2).sum(axis=1)
+                return group.iloc[numpy.argmax(distances)]
+
             result = grouped.groupby("timestamp").apply(furthest_row, include_groups=False)
             result_zscores = result[numeric_columns]
             result_anomaly_scores = result["_anomaly_score"]
@@ -246,7 +326,6 @@ def mosaic_from_zscored_dataframes_and_scores(
         features_axis.set_xticks(range(len(numeric_columns)))
         features_axis.set_xticklabels(numeric_columns, fontsize=6, rotation=90)
         column_groups = [feature_group_from_column_name(c) for c in numeric_columns]
-        unique_groups = list(dict.fromkeys(column_groups))
         for tick_label, group in zip(features_axis.get_xticklabels(), column_groups):
             tick_label.set_color(cmap_for_group(group)(0.0)[:3])
         features_axis.set_title(title, fontsize=10)
@@ -499,16 +578,16 @@ def _aligned_mosaic_data_from_features(
     inv_timestamps = pandas.to_datetime(investigated_features_dataframe["timestamp"])
     bas_timestamps = pandas.to_datetime(baseline_features_dataframe["timestamp"])
 
-    # --- aggregate baseline ---
     numeric_columns = list(investigated_zscores.columns)
     bas_zscores_agg, bas_scores_agg = anomalies.aggregated_panel_from_zscores_and_metadata(
         baseline_zscores, baseline_anomaly_scores, bas_timestamps,
         baseline_features_dataframe["hive"].values, baseline_aggregation,
         numeric_columns,
+        investigated_zscores=investigated_zscores,
+        investigated_timestamps=inv_timestamps,
     )
     bas_timestamps_agg = pandas.to_datetime(bas_zscores_agg.index)
 
-    # --- observation period ---
     match observation_period:
         case "intersection":
             obs_start = max(inv_timestamps.min(), bas_timestamps_agg.min())
@@ -525,7 +604,6 @@ def _aligned_mosaic_data_from_features(
         case (start, end):
             obs_start, obs_end = pandas.Timestamp(start), pandas.Timestamp(end)
 
-    # --- window both panels ---
     inv_mask = (inv_timestamps >= obs_start) & (inv_timestamps <= obs_end)
     investigated_zscores = investigated_zscores[inv_mask.values]
     investigated_anomaly_scores = investigated_anomaly_scores[inv_mask.values]
@@ -536,7 +614,6 @@ def _aligned_mosaic_data_from_features(
     bas_scores_agg = bas_scores_agg[bas_mask]
     bas_timestamps_agg = bas_timestamps_agg[bas_mask]
 
-    # --- build full timestamp grid and reindex ---
     all_present_hours = set(
         inv_timestamps.dt.hour.tolist()
         + bas_timestamps_agg.hour.tolist()
@@ -564,6 +641,7 @@ def _aligned_mosaic_data_from_features(
         aggregation_label=aggregation_label,
     )
 
+
 def investigate_anomaly(
     investigated_features_dataframe,
     baseline_features_dataframe,
@@ -577,10 +655,81 @@ def investigate_anomaly(
         baseline_features_dataframe,
         baseline_aggregation,
         observation_period,
-        anomaly_scores_from_dataframe = anomaly_scores_from_dataframe,
+        anomaly_scores_from_dataframe=anomaly_scores_from_dataframe,
     )
     if plotly:
         return anomalies.plotly_mosaic_from_zscored_dataframes_and_scores(**data)
     return anomalies.mosaic_from_zscored_dataframes_and_scores(**data)
 
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+import matplotlib.pyplot
+import dataframes
 
+def principal_component_analysis_figure_from_dataframe(dataframe):
+
+    numeric_columns = dataframes.numeric_columns_from_dataframe(dataframe)
+    scaled = StandardScaler().fit_transform(dataframe[numeric_columns])
+    projected = PCA(n_components=2).fit_transform(scaled)
+
+    def label_from_row(row):
+        match row["hive"], row["queenlessness"]:
+            case "hive_03", True:  return "hive_03 queenless"
+            case "hive_03", False: return "hive_03 queenright"
+            case "hive_04", True:  return "hive_04 queenless"
+            case "hive_04", False: return "hive_04 queenright"
+            case hive, _:          return f"{hive} queenright"
+
+    labels = dataframe.apply(label_from_row, axis=1)
+    unique_labels = sorted(labels.unique())
+
+    n_labels = len(unique_labels)
+    n_columns = 4
+    n_rows = (n_labels + n_columns - 1) // n_columns
+
+    figure, axes = matplotlib.pyplot.subplots(
+        nrows=n_rows, ncols=n_columns,
+        figsize=(4 * n_columns, 4 * n_rows),
+        sharex=True, sharey=True,
+    )
+
+    for axis_index, axis in enumerate(axes.flat):
+        if axis_index >= n_labels:
+            axis.set_visible(False)
+            continue
+
+        highlighted_label = unique_labels[axis_index]
+        highlighted_mask = labels.values == highlighted_label
+
+        axis.scatter(
+            projected[~highlighted_mask, 0], projected[~highlighted_mask, 1],
+            c="lightgrey", alpha=0.15, s=8, zorder=1,
+        )
+        axis.scatter(
+            projected[highlighted_mask, 0], projected[highlighted_mask, 1],
+            c="red" if "queenless" in highlighted_label else "blue",
+            alpha=0.5, s=14, zorder=2,
+        )
+        axis.set_title(highlighted_label, fontsize=9)
+
+    figure.suptitle("PCA — each panel highlights one group", fontsize=12)
+    figure.tight_layout()
+    return figure
+
+def most_anomalous_feature_columns(investigated_dataframes, baseline_dataframe, top_k=20):
+    metadata_columns = ['timestamp', 'hive', 'time_slice', 'queenlessness', 'temperature', 'humidity']
+
+    def absolute_median_zscores_from_investigated_dataframe(investigated_dataframe):
+        zscores = dataframes.zscored_dataframe_from_dataframe_and_baseline(
+            investigated_dataframe, baseline_dataframe,
+        )
+        return zscores.drop(columns=metadata_columns, errors='ignore').median().abs()
+
+    combined_scores = pandas.concat(
+        [absolute_median_zscores_from_investigated_dataframe(df) for df in investigated_dataframes],
+        axis=1,
+    ).mean(axis=1).sort_values(ascending=False)
+
+    anomalous_columns = list(combined_scores.head(top_k).index)
+
+    return anomalous_columns + metadata_columns

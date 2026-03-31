@@ -37,6 +37,8 @@
               python_packages.seaborn
               python_packages.plotly
               python_packages.dash
+              # for essenta
+              python_packages.pip
               # clustering and dimensionality reduction
               # python_packages.hdbscan # broken
               python_packages.umap-learn

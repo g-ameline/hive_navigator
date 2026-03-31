@@ -1,12 +1,20 @@
 import numpy
 import matplotlib.pyplot
+import matplotlib.colors
 import matplotlib.dates
+import matplotlib.gridspec
+import matplotlib.transforms
+import matplotlib.lines
+import librosa
+import librosa.display
+import soundfile
 import times
 from datetime import datetime
 from pipe import Pipe
 
 matplotlib.pyplot.rcParams['figure.dpi'] = 100
 matplotlib.pyplot.rcParams['savefig.dpi'] = 100
+
 
 def zscore_heatmap(
     dataframe,
@@ -24,39 +32,42 @@ def zscore_heatmap(
     ).values
     matrix = hive[feature_columns].values.T
 
-    fig, ax = matplotlib.pyplot.subplots(
+    figure, axis = matplotlib.pyplot.subplots(
         figsize=(max(16, len(time_labels) * 0.15), max(6, len(feature_columns) * 0.3))
     )
-    mesh = ax.pcolormesh(
+    mesh = axis.pcolormesh(
         matrix,
         cmap="RdBu_r",
         vmin=vmin,
         vmax=vmax,
         shading="nearest",
     )
-    fig.colorbar(mesh, ax=ax, label="z-score")
+    figure.colorbar(mesh, ax=axis, label="z-score")
 
     step = max(1, len(time_labels) // 30)
-    ax.set_xticks(range(0, len(time_labels), step))
-    ax.set_xticklabels(time_labels[::step], rotation=45, ha="right", fontsize=6)
+    axis.set_xticks(range(0, len(time_labels), step))
+    axis.set_xticklabels(time_labels[::step], rotation=45, ha="right", fontsize=6)
 
     short_names = [c.removesuffix("_zscore") for c in feature_columns]
-    ax.set_yticks(range(len(short_names)))
-    ax.set_yticklabels(short_names, fontsize=7)
+    axis.set_yticks(range(len(short_names)))
+    axis.set_yticklabels(short_names, fontsize=7)
 
-    ax.set_title(f"{hive_name} — z-scored features")
-    matplotlib.pyplot.tight_layout()
-    matplotlib.pyplot.show()
+    axis.set_title(f"{hive_name} — z-scored features")
+    figure.tight_layout()
+    return figure
+
 
 def spectrum(audio, sample_rate=16000, low_frequency=50, high_frequency=2000):
     freqs = numpy.fft.rfftfreq(len(audio), d=1.0 / sample_rate)
     magnitudes = numpy.abs(numpy.fft.rfft(audio))
     mask = (freqs >= low_frequency) & (freqs <= high_frequency)
-    matplotlib.pyplot.figure(figsize=(12, 4))
-    matplotlib.pyplot.semilogy(freqs[mask], magnitudes[mask])
-    matplotlib.pyplot.xlabel("Hz")
-    matplotlib.pyplot.ylabel("Magnitude")
-    matplotlib.pyplot.show()
+
+    figure, axis = matplotlib.pyplot.subplots(figsize=(12, 4))
+    axis.semilogy(freqs[mask], magnitudes[mask])
+    axis.set_xlabel("Hz")
+    axis.set_ylabel("Magnitude")
+    figure.tight_layout()
+    return figure
 
 
 def spectrogram(
@@ -64,7 +75,6 @@ def spectrogram(
     sample_rate=16000,
     low_frequency=0,
     high_frequency=600,
-    min_distance_hz=20,
     queen_event_hints=True,
 ):
     timestamps = numpy.array([t for t, _ in timestamp_frame_pairs])
@@ -74,20 +84,20 @@ def spectrogram(
     mask = (freqs >= low_frequency) & (freqs <= high_frequency)
     freqs_masked = freqs[mask]
 
-    spectrogram = numpy.array([
+    spectrogram_matrix = numpy.array([
         numpy.abs(numpy.fft.rfft(frame))[mask]
         for frame in frames
     ])
 
-    log_spectrogram = numpy.log1p(spectrogram)
+    log_spectrogram = numpy.log1p(spectrogram_matrix)
     vmin = numpy.percentile(log_spectrogram, 2)
     vmax = numpy.percentile(log_spectrogram, 98)
 
     n_frames = len(frames)
     x_indices = numpy.arange(n_frames)
 
-    fig, ax = matplotlib.pyplot.subplots(figsize=(16, 5))
-    mesh = ax.pcolormesh(
+    figure, axis = matplotlib.pyplot.subplots(figsize=(16, 5))
+    mesh = axis.pcolormesh(
         x_indices,
         freqs_masked,
         log_spectrogram.T,
@@ -96,9 +106,8 @@ def spectrogram(
         vmin=vmin,
         vmax=vmax,
     )
-    fig.colorbar(mesh, ax=ax, label="log(1 + magnitude)")
+    figure.colorbar(mesh, ax=axis, label="log(1 + magnitude)")
 
-    # date tick labels from timestamps
     def tick_positions_and_labels(timestamps, max_ticks=12):
         step = max(1, len(timestamps) // max_ticks)
         positions = list(range(0, len(timestamps), step))
@@ -107,57 +116,59 @@ def spectrogram(
             for i in positions
         ]
         return positions, labels
-    
+
     positions, labels = tick_positions_and_labels(timestamps)
-    ax.set_xticks(positions)
-    ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=7)
-    
+    axis.set_xticks(positions)
+    axis.set_xticklabels(labels, rotation=45, ha="right", fontsize=7)
+
     if queen_event_hints:
-            queen_start = numpy.datetime64(times.queen_event_window[0])
-            queen_end = numpy.datetime64(times.queen_event_window[1])
-            t_min, t_max = timestamps[0], timestamps[-1]
-            if queen_start > t_min and queen_start < t_max:
-                for i in range(len(timestamps)):
-                    if timestamps[i] >= queen_start:
-                        ax.axvline(i, color="red", linewidth=2, linestyle="--")
-                        break
-            if queen_end > t_min and queen_end < t_max:
-                for i in range(len(timestamps) - 1, -1, -1):
-                    if timestamps[i] <= queen_end:
-                        ax.axvline(i, color="red", linewidth=2, linestyle="--")
-                        break
-            queen_day_start = numpy.datetime64(times.queen_event_day_window[0])
-            queen_day_end = numpy.datetime64(times.queen_event_day_window[1])
-            t_min, t_max = timestamps[0], timestamps[-1]
-            if queen_day_start > t_min and queen_day_start < t_max:
-                for i in range(len(timestamps)):
-                    if timestamps[i] >= queen_day_start:
-                        ax.axvline(i, color="white", linewidth=2, linestyle="--")
-                        break
-            if queen_day_end > t_min and queen_day_end < t_max:
-                for i in range(len(timestamps) - 1, -1, -1):
-                    if timestamps[i] <= queen_day_end:
-                        ax.axvline(i, color="white", linewidth=2, linestyle="--")
-                        break
-    ax.set_ylabel("Hz")
-    matplotlib.pyplot.tight_layout()
-    matplotlib.pyplot.show()
+        queen_start = numpy.datetime64(times.queen_event_window[0])
+        queen_end = numpy.datetime64(times.queen_event_window[1])
+        t_min, t_max = timestamps[0], timestamps[-1]
+        if t_min < queen_start < t_max:
+            for i in range(len(timestamps)):
+                if timestamps[i] >= queen_start:
+                    axis.axvline(i, color="red", linewidth=2, linestyle="--")
+                    break
+        if t_min < queen_end < t_max:
+            for i in range(len(timestamps) - 1, -1, -1):
+                if timestamps[i] <= queen_end:
+                    axis.axvline(i, color="red", linewidth=2, linestyle="--")
+                    break
+        queen_day_start = numpy.datetime64(times.queen_event_day_window[0])
+        queen_day_end = numpy.datetime64(times.queen_event_day_window[1])
+        if t_min < queen_day_start < t_max:
+            for i in range(len(timestamps)):
+                if timestamps[i] >= queen_day_start:
+                    axis.axvline(i, color="white", linewidth=2, linestyle="--")
+                    break
+        if t_min < queen_day_end < t_max:
+            for i in range(len(timestamps) - 1, -1, -1):
+                if timestamps[i] <= queen_day_end:
+                    axis.axvline(i, color="white", linewidth=2, linestyle="--")
+                    break
+
+    axis.set_ylabel("Hz")
+    figure.tight_layout()
+    return figure
+
 
 def mfcc_heatmap(timestamp_mfcc_couples):
     timestamps, mfccs = zip(*timestamp_mfcc_couples)
     matrix = numpy.stack(mfccs, axis=1)
-    figure, axes = matplotlib.pyplot.subplots(figsize=(14, 4))
-    axes.imshow(matrix, aspect="auto", origin="lower", interpolation="nearest")
-    axes.set_ylabel("coefficient index")
-    axes.set_xlabel("frame index")
-    matplotlib.pyplot.colorbar(axes.images[0], ax=axes)
-    matplotlib.pyplot.show()
+    figure, axis = matplotlib.pyplot.subplots(figsize=(14, 4))
+    axis.imshow(matrix, aspect="auto", origin="lower", interpolation="nearest")
+    axis.set_ylabel("coefficient index")
+    axis.set_xlabel("frame index")
+    figure.colorbar(axis.images[0], ax=axis)
+    figure.tight_layout()
+    return figure
 
-@Pipe
+
 def accelerometry_overview(
     timestamps_and_frequencies_and_magnitudes,
     hive_number,
-    queen_state_hint=False
+    queen_state_hint=False,
 ):
     timestamps, frequencies, magnitudes = timestamps_and_frequencies_and_magnitudes
     cmap_blue_red = matplotlib.colors.LinearSegmentedColormap.from_list("blue_red", ["#08306b", "#d73027"])
@@ -189,13 +200,19 @@ def accelerometry_overview(
     )
     figure.colorbar(scatter, ax=axis, label='magnitude')
 
-    if queen_state_hint and hive_number in times.QUEEN_EVENTS:
-        event_styles = {'removed': ('red', '--'), 'introduced': ('green', '--')}
-        for date_string, event_type in times.QUEEN_EVENTS[hive_number]:
-            x_position = numpy.datetime64(date_string, 'm').astype(float)
-            color, linestyle = event_styles[event_type]
+    event_styles = {'removed': ('red', '--'), 'introduced': ('green', '--')}
+    if hive_number in times.queenless_period_per_hive:
+        start, end = times.queenless_period_per_hive[hive_number]
+        if start is not None:
+            x_position = numpy.datetime64(start, 'm').astype(float)
+            color, linestyle = event_styles['removed']
             axis.axvline(x_position, color=color, linestyle=linestyle, linewidth=1.5, alpha=0.8,
-                         label=f'queen {event_type} ({date_string})')
+                         label=f'queen removed ({start})')
+        if end is not None:
+            x_position = numpy.datetime64(end, 'm').astype(float)
+            color, linestyle = event_styles['introduced']
+            axis.axvline(x_position, color=color, linestyle=linestyle, linewidth=1.5, alpha=0.8,
+                         label=f'queen reintroduce ({end})')
         axis.legend(loc='upper right')
 
     axis.set_ylabel('frequency (hertz)')
@@ -209,15 +226,16 @@ def accelerometry_overview(
     axis.set_xticklabels(tick_labels, rotation=45)
 
     figure.tight_layout()
+    return figure
 
-@Pipe
+
 def magnitudes_over_frequencies_from_accelerometry(
-    timestamps_and_frequencies_and_magnitudes,    
-    hive_number
+    timestamps_and_frequencies_and_magnitudes,
+    hive_number,
 ):
-    _timestamps, frequencies, magnitudes = timestamps_and_frequencies_and_magnitudes    
+    _timestamps, frequencies, magnitudes = timestamps_and_frequencies_and_magnitudes
     figure, axis = matplotlib.pyplot.subplots(figsize=(14, 6))
-    
+
     axis.scatter(
         frequencies,
         magnitudes,
@@ -229,17 +247,17 @@ def magnitudes_over_frequencies_from_accelerometry(
     axis.set_xlabel('frequency (Hz)')
     axis.set_ylabel('magnitude (log)')
     axis.set_title(f'hive {hive_number} — frequency vs magnitude distribution')
-    
+
     figure.tight_layout()
+    return figure
 
-@Pipe
+
 def magnitudes_over_frequencies_by_rank_from_triple_accelerometry(
-    timestamps_and_triple_frequencies_and_triple_magnitudes,    
-    hive_number
+    timestamps_and_triple_frequencies_and_triple_magnitudes,
+    hive_number,
 ):
-    timestamps, triple_frequencies, triple_magnitudes = timestamps_and_triple_frequencies_and_triple_magnitudes    
+    timestamps, triple_frequencies, triple_magnitudes = timestamps_and_triple_frequencies_and_triple_magnitudes
 
-    
     figure, axes = matplotlib.pyplot.subplots(1, 3, figsize=(18, 5), sharey=True, sharex=True)
 
     colors = ['red', 'green', 'blue']
@@ -258,18 +276,20 @@ def magnitudes_over_frequencies_by_rank_from_triple_accelerometry(
         axis.set_title(labels[rank])
 
     axes[0].set_ylabel('magnitude (log)')
-    axis.set_title(f'hive {hive_number} — frequency vs magnitude by peak rank')
-    figure.tight_layout()
+    axes[-1].set_title(f'hive {hive_number} — frequency vs magnitude by peak rank')
 
-@Pipe
+    figure.tight_layout()
+    return figure
+
+
 def histogram_from_accelerometry(
-    timestamps_and_frequencies_and_magnitudes,    
-    hive_number
-) :
-    timestamps, frequencies, magnitudes = timestamps_and_frequencies_and_magnitudes    
+    timestamps_and_frequencies_and_magnitudes,
+    hive_number,
+):
+    timestamps, frequencies, magnitudes = timestamps_and_frequencies_and_magnitudes
 
     figure, axis = matplotlib.pyplot.subplots(figsize=(14, 6))
-    
+
     axis.hist(
         frequencies,
         bins=500,
@@ -280,17 +300,19 @@ def histogram_from_accelerometry(
     axis.set_xlabel('frequency (Hz)')
     axis.set_ylabel('count')
     axis.set_title(f'hive {hive_number} — distribution of FFT peaks')
-    figure.tight_layout()
 
-@Pipe
+    figure.tight_layout()
+    return figure
+
+
 def magnitude_histogram_from_accelerometry(
-    timestamps_and_frequencies_and_magnitudes,    
-    hive_number
-) :
-    timestamps, frequencies, magnitudes = timestamps_and_frequencies_and_magnitudes        
-    
+    timestamps_and_frequencies_and_magnitudes,
+    hive_number,
+):
+    timestamps, frequencies, magnitudes = timestamps_and_frequencies_and_magnitudes
+
     figure, axis = matplotlib.pyplot.subplots(figsize=(14, 6))
-    
+
     axis.hist(
         magnitudes,
         bins=500,
@@ -301,14 +323,12 @@ def magnitude_histogram_from_accelerometry(
     axis.set_xlabel('magnitude')
     axis.set_ylabel('count')
     axis.set_title(f'hive {hive_number} — frequency distribution of FFT peaks')
-    
+
     figure.tight_layout()
+    return figure
 
 
-
-@Pipe
-def plot_curves(day_value_pairs, curve_names, title, ylabel="", queen_state_hint=False):
-
+def curves(day_value_pairs, curve_names, title, ylabel="", queen_state_hint=False):
     COLORS = [
         'steelblue', 'darkorange', 'seagreen', 'crimson',
         'mediumpurple', 'goldenrod', 'teal', 'hotpink',
@@ -317,9 +337,7 @@ def plot_curves(day_value_pairs, curve_names, title, ylabel="", queen_state_hint
 
     figure, axis = matplotlib.pyplot.subplots(figsize=(16, 5))
 
-    for (days, values), name, color in zip(
-        day_value_pairs, curve_names, COLORS,
-    ):
+    for (days, values), name, color in zip(day_value_pairs, curve_names, COLORS):
         days_as_float = days.astype('datetime64[D]').astype(float)
         axis.plot(
             days_as_float, values,
@@ -342,33 +360,107 @@ def plot_curves(day_value_pairs, curve_names, title, ylabel="", queen_state_hint
     tick_labels = [str(d)[:10] for d in days]
     axis.set_xticks(days_as_float)
     axis.set_xticklabels(tick_labels, rotation=45, ha='right')
+
     figure.tight_layout()
+    return figure
 
-
-import librosa
-import librosa.display
-import soundfile
-import matplotlib.pyplot as plt
-import numpy
-from pipe import Pipe
-
-
-def spectrogram_from_filepath(filepath, title=None):
+def spectrogram_from_filepath(
+    filepath,
+    title=None,
+    log_scale=False,
+    notable_frequencies=True,
+):
     samples, sample_rate = soundfile.read(filepath)
     stft = librosa.stft(samples)
     spectrogram_db = librosa.amplitude_to_db(numpy.abs(stft), ref=numpy.max)
 
-    fig, ax = plt.subplots(figsize=(12, 4))
+    figure = matplotlib.pyplot.figure(figsize=(20, 5))
+
+    if notable_frequencies:
+        COLOR_BANDPASS     = "#00FFCC"
+        COLOR_CARRIER      = "#FFFFFF"
+        COLOR_WARBLE       = "#66FF66"
+        COLOR_NON_SWARM    = "#00CED1"
+        COLOR_QUEEN_WORKER = "#ADFF2F"
+        COLOR_PRE_SWARM    = "#7FFFD4"
+
+        notable_hz_entries = [
+            (100, "bandpass lower boundary",        False, COLOR_BANDPASS),
+            (225, "worker warble lower edge",       False, COLOR_WARBLE),
+            (250, "wing-beat carrier center",       True,  COLOR_CARRIER),
+            (285, "worker warble upper edge",       False, COLOR_WARBLE),
+            (300, "non-swarm dominant upper edge",  False, COLOR_NON_SWARM),
+            (400, "queen/worker peaks lower edge",  False, COLOR_QUEEN_WORKER),
+            (500, "pre-swarm dominant lower edge",  False, COLOR_PRE_SWARM),
+            (550, "queen/worker peaks upper edge",  False, COLOR_QUEEN_WORKER),
+            (600, "pre-swarm dominant upper edge",  False, COLOR_PRE_SWARM),
+        ]
+
+        legend_entries = [
+            ("500–600 Hz — pre-swarm dominant",    COLOR_PRE_SWARM),
+            ("400–550 Hz — queen/worker peaks",    COLOR_QUEEN_WORKER),
+            ("300 Hz — non-swarm dominant upper",  COLOR_NON_SWARM),
+            ("225–285 Hz — worker warble range",   COLOR_WARBLE),
+            ("250 Hz — wing-beat carrier center",  COLOR_CARRIER),
+            ("100 Hz — bandpass lower boundary",   COLOR_BANDPASS),
+        ]
+
+        grid = matplotlib.gridspec.GridSpec(1, 2, figure=figure, width_ratios=[0.015, 1], wspace=0.15)
+        grid.update(left=0.04, right=0.93)
+    else:
+        grid = matplotlib.gridspec.GridSpec(1, 2, figure=figure, width_ratios=[0.015, 1], wspace=0.15)
+        grid.update(left=0.04, right=0.95)
+
+    cax = figure.add_subplot(grid[0, 0])
+    axis = figure.add_subplot(grid[0, 1])
+
     image = librosa.display.specshow(
         spectrogram_db,
         sr=sample_rate,
         x_axis="time",
-        y_axis="hz",
-        ax=ax,
+        y_axis="log" if log_scale else "hz",
+        ax=axis,
     )
-    ax.set_title(title or filepath)
-    ax.set_ylim(0, 1000)
-    fig.colorbar(image, ax=ax, format="%+2.0f dB")
-    plt.tight_layout()
-    plt.show()
-    return filepath
+    axis.set_title(title or filepath)
+    axis.set_ylim(1 if log_scale else 0, 1024)
+
+    if notable_frequencies:
+        label_transform = matplotlib.transforms.blended_transform_factory(axis.transAxes, axis.transData)
+
+        for hz, _label, is_center, color in notable_hz_entries:
+            axis.axhline(
+                hz,
+                xmin=0.5, xmax=1.0,
+                color=color,
+                linewidth=2.0 if is_center else 1.5,
+                linestyle="--",
+                alpha=0.95 if is_center else 0.75,
+            )
+            axis.text(
+                1.01, hz, f"{hz} Hz",
+                transform=label_transform,
+                fontsize=7,
+                color="black",
+                verticalalignment="center",
+                fontweight="bold" if is_center else "normal",
+                clip_on=False,
+            )
+
+        legend_handles = [
+            matplotlib.lines.Line2D([0], [0], color=color, linewidth=2, linestyle="--", label=name)
+            for name, color in legend_entries
+        ]
+        axis.legend(
+            handles=legend_handles,
+            loc="upper right",
+            fontsize=7,
+            framealpha=1.0,
+            facecolor="white",
+            edgecolor="black",
+            fancybox=True,
+        )
+
+    figure.colorbar(image, cax=cax, format="%+2.0f dB")
+
+    figure.tight_layout()
+    return figure

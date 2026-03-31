@@ -5,7 +5,6 @@ from pipe import (
 )
 import os
 
-@Pipe
 def first_two_lines_from_filepath(filepath):
     with open(filepath, mode='r') as stream:
         return stream.readline().strip(), stream.readline().strip()
@@ -13,15 +12,16 @@ def first_two_lines_from_filepath(filepath):
 hive_name_from_number = lambda number: f'hive_{number:02d}'
 
 data_folderpath = "../../data/"
+pictures_folder = "pictures/"
 audio_folder = "audio/"
 sensors_folder = "sensors/"
 hive_foldernames = [(hive_name_from_number(number)+'/') for number in range(1,12)]
 features_folderpath = data_folderpath + "features/"
+pictures_folderpath = data_folderpath + "pictures/"
 
 hive_sensors_filename_from_hive_number = lambda hive_number:f'hive_{hive_number:02d}_sensors.csv'
 hive_accelerometries_filename_from_hive_number = lambda hive_number:f'hive_{hive_number:02d}_accel.csv'
 
-@Pipe
 def hive_audio_folderpath_from_hive_number(hive_number):
     assert 1<=hive_number<=11
     return (
@@ -31,7 +31,6 @@ def hive_audio_folderpath_from_hive_number(hive_number):
         + "03/"
     )
 
-@Pipe
 def hive_sensors_filepath_from_hive_number(hive_number):
     assert 1<=hive_number<=11
     return (
@@ -42,7 +41,6 @@ def hive_sensors_filepath_from_hive_number(hive_number):
         + hive_sensors_filename_from_hive_number(hive_number)
     )
 
-@Pipe
 def hive_accelerometry_filepath_from_hive_number(hive_number):
     assert 1<=hive_number<=11
     return (

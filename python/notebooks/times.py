@@ -2,22 +2,20 @@ import numpy
 from pipe import (
     Pipe
 )
-QUEEN_EVENTS = {
-    3: [
-        ('2026-03-12', 'removed'),
-    ],
-    4: [
-        ('2026-03-09', 'removed'),
-        ('2026-03-12', 'introduced'),
-    ],
+
+queenless_period_per_hive = {
+    3: (None, '2026-03-12 12:00'),
+    4: ('2026-03-12 12:00', None),
 }
+
+
 DAY_SLICES = {
-    'full day':          (0, 24),
-    'night only':        (0, 6),
-    'broad daylight':    (8, 18),
-    'foraging window':   (10, 16),
-    'morning priming':   (6, 10),
-    'afternoon':         (12, 18),
+    'full day':          ("0:00", "24:00"),
+    'night only':        ("0:00", "6:00"),
+    'broad daylight':    ("8:00", "18:00"),
+    'foraging window':   ("10:00", "16:00"),
+    'morning priming':   ("6:00", "10:00"),
+    'afternoon':         ("12:00", "18:00"),
 }
 
 TIME_SLICES = [
@@ -73,6 +71,7 @@ before_queen_event_window = ("2026-03-01", "2026-03-09")
 after_queen_event_window = ("2026-03-14", "2026-03-30")
 queen_event_month_window = ("2026-03-01", "2026-03-30")
 queen_event_day_window = ("2026-03-12", "2026-03-13")
+experiment_window = ("2026-03-07", "2026-03-17") #those get treated as midnight time
 
 daytime = ("07:00", "20:00")
 nighttime = ("20:00", "07:00")

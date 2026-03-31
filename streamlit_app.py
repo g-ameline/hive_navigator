@@ -296,20 +296,21 @@ streamlit.divider()
 
 # ── sidebar: mosaic parameters ───────────────────────────────────────
 
+
 streamlit.sidebar.header("Mosaic parameters")
 
 baseline_aggregation = streamlit.sidebar.selectbox(
     "Baseline aggregation",
-    ["mean", "worst", "best", "furthest"],
+    ["closest", "mean", "worst", "best", "furthest"],
     help=(
         "How to summarise the queenright baseline for each time slot. "
+        "'closest' picks the hive most similar to the investigated one at each hour; "
         "'mean' averages all queenright hives; "
         "'worst' picks the most anomalous hive at each hour; "
         "'best' picks the least anomalous; "
         "'furthest' picks the hive most different from the investigated one."
     ),
 )
-
 observation_period = streamlit.sidebar.selectbox(
     "Observation period",
     ["join", "intersection", "investigated", "baseline"],
