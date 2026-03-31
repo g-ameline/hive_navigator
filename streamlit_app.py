@@ -182,12 +182,32 @@ if not selected_features:
     streamlit.warning("Select at least one feature to proceed.")
     streamlit.stop()
 
+def nondegenerate_features_from_dataframe_and_features(dataframe, features):
+    safe = []
+    for feature in features:
+        is_safe = True
+        for _, group in dataframe.groupby("time_slice"):
+            if group[feature].std() == 0 or group[feature].isna().any():
+                is_safe = False
+                break
+        if is_safe:
+            safe.append(feature)
+    return safe
+
+selected_features = nondegenerate_features_from_dataframe_and_features(
+    queenright_dataframe, selected_features,
+)
+
+if not selected_features:
+    streamlit.warning("No features with sufficient variance remain. Broaden the time slices or feature selection.")
+    streamlit.stop()
+
 keep_columns = [
     c for c in METADATA_COLUMNS if c in queenright_dataframe.columns
 ] + selected_features
 
-queenright_selected = queenright_dataframe[keep_columns]
-queenless_selected = queenless_dataframe[keep_columns]
+queenright_selected = queenright_dataframe[keep_columns].dropna()
+queenless_selected = queenless_dataframe[keep_columns].dropna()
 
 
 # ── sidebar: anomaly detector ────────────────────────────────────────
