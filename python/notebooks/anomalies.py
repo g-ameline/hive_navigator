@@ -32,7 +32,6 @@ from sklearn.covariance import EllipticEnvelope
 from sklearn.svm import OneClassSVM
 from sklearn.preprocessing import StandardScaler
 
-
 def scorers_from_inliers_dataframe_and_detector(inliers_dataframe, detector):
     scorers = {}
     for time_slice, group in inliers_dataframe.groupby("time_slice"):

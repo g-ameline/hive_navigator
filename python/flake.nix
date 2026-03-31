@@ -40,6 +40,7 @@
               # clustering and dimensionality reduction
               # python_packages.hdbscan # broken
               python_packages.umap-learn
+              python_packages.streamlit
             ]))
           ];
 
