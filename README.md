@@ -261,9 +261,14 @@ Patterns appear to be more hive-dependent than queenlessness-dependent.
 - **Mann–Whitney U test + area under the receiver operating characteristic curve** — non-parametric measure of how separable the two populations are
 - **Cohen's d** — effect size in pooled standard deviations
 
+
+#### queenless vs queenright
 ![queenless vs queenright](./data/pictures/queenless_versus_queenright_discrimination.png)
+#### queenless hive 03 vs queenright
 ![hive 03 queenless vs queenright](./data/pictures/hive_03_queenless_versus_queenright_discrimination.png)
+#### queenless hive 04 vs queenright
 ![hive 04 queenless vs queenright](./data/pictures/hive_04_queenless_versus_queenright_discrimination.png)
+#### queenright hive 06 before 03/12 vs after 03/12 queenright
 ![hive 06 before and after twelfth](./data/pictures/hive_06_before_and_after_twelfth_discrimination.png)
 
 These results indicate positive detection power for the queenless state,
