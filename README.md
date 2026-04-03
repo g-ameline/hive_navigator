@@ -213,6 +213,8 @@ These values are merged with the audio feature dataframe by timestamp
 and included as context features for anomaly detection.
 
 ![ambient raw](./data/pictures/ambient_raw.png)
+
+#### aggregated ambient features
 ![ambient aggregation](./data/pictures/ambient_aggreagation.png)
 
 ---
